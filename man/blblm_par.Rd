@@ -7,7 +7,7 @@
 blblm_par(formula, data, m = 3, B = 5000, cl = cl)
 }
 \arguments{
-\item{formula}{formula for regression}
+\item{formula}{regression formula}
 
 \item{data}{dataset}
 

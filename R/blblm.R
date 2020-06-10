@@ -55,7 +55,7 @@ blblm <- function(formula, data, m = 3, B = 5000) {
 
 #' Blblm with parallelization
 #'
-#' @param formula formula for regression
+#' @param formula regression formula
 #' @param data dataset
 #' @param m number of subset
 #' @param B number of boostrap samples
