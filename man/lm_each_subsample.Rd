@@ -6,6 +6,15 @@
 \usage{
 lm_each_subsample(formula, data, n, B)
 }
+\arguments{
+\item{formula}{formula for regression}
+
+\item{data}{dataset of interest}
+
+\item{n}{number of rows in total}
+
+\item{B}{number of bootstrap samples}
+}
 \description{
 compute the estimates
 }

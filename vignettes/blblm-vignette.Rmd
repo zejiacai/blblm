@@ -1,0 +1,148 @@
+---
+title: "blblm-vignette"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{blblm-vignette}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+```{r setup}
+library(blblm)
+```
+
+## Introduction
+
+blblm package performs the linear regression and calculate the statistics from the regression model using bag of little bootstrap.
+The bag of little boostrap linear regression basically start from splitting a dataframe in to m subsets and then making B bootstap samples for every subset where each boostrap sample has a same sample size of the original dataset. From every bootstrap samples (in total m*B), the function performs a linear regression and calculates corresponding statistics. At the end the statistics are reduced to an average.
+<br/><br/>
+
+## Function: blblm
+blblm function will perform the blblm without parallelization.
+I improve the blblm function into a function which can also accept a list of file names instead of a single dataframe. I used the map function to read the file names and store all of the csv into the variable data_list. blblm function will first check the data input is a dataframe or a list of files. If it is a single dataframe, then the program will split the dataset into m subsamples. If the data input is is a list of files, then the program will directly go to the next step.
+```{r, eval= FALSE}
+blblm <- function(formula, data, m = 3, B = 1000) {
+  if (is.data.frame(data)){
+    data_list <- split_data(data, m)
+    }
+  else if (is.data.frame(data)==FALSE) {
+    data_list<-data%>%
+      map(function (fname){
+       as.data.frame(readr::read_csv(fname, col_types = cols()))
+      })
+  }
+  estimates <- map(
+    data_list,
+    ~ lm_each_subsample(formula = formula, data = ., n = nrow(data), B = B))
+  res <- list(estimates = estimates, formula = formula)
+  class(res) <- "blblm"
+  invisible(res)
+}
+```
+```{r}
+fit <-blblm(mpg~wt,mtcars, m=3, B= 1000)
+fit
+```
+
+blblm function splits the data by calling split_data. In the split_data, I update the original sample.int function into the function sampleintC, which is written in c code to improve the running speed.
+
+```{r, eval = FALSE}
+split_data <- function(data, m) {
+  idx <- sampleintC(data,m)
+  data %>% split(idx)
+}
+```
+```{Rcpp, eval= FALSE}
+#include <Rcpp.h>
+using namespace Rcpp;
+
+// [[Rcpp::export]]
+IntegerVector sampleintC(DataFrame df, int m) {
+
+  int n= df.nrow();
+
+  IntegerVector a= seq(1,m);
+
+  IntegerVector indx=sample(a, n, true);
+
+  return indx;
+
+}
+```
+
+After splitting, blblm function will call function lm_each_subsample for every subsamples seperately using map. Using replicate, lm_each_subsample will perform lm_each_boot B times for every subsamples since we have B boostrap samples in each subsample. lm_each_boot function then performs regression for the given sample data by calling lm1 function.
+<br/><br/>
+
+### Function: lm1
+lm1 simply implements the linear regression with weights and calculates the coefficient and sigma by calling blbcoef() and blbsigma(). The calculated coefficient and sigma will both be stored in to the "estimate" in the result of blblm function
+```{r, eval= FALSE}
+lm1 <- function(formula, data, freqs) {
+  # drop the original closure of formula,
+  # otherwise the formula will pick a wrong variable from the global scope.
+  environment(formula) <- environment()
+  fit <- lm(formula, data, weights = freqs)
+  list(coef = blbcoef(fit), sigma = blbsigma(fit))
+}
+```
+
+<br/><br/>
+
+## Function: blblm_par
+I added a function called blblm_par to improve user experince when using the blblm.
+blblm_par function will perform blblm using parallelization or multiple cores. 
+Users will first need to run `cl<-makeCluster(n_cores)` and then run the blblm_par. 
+blblm_par will use parLapply to distribute the splitted dataset into each cpu and greatly improve the running speed of blblm. It will give the same result as blblm but with a much faster efficiency.
+```{r, eval = FALSE}
+blblm_par<- function(formula, data, m = 3, B = 5000, cl=cl){
+
+    data_list <- split_data(data, m)
+    estimates <- parallel::parLapply(
+      cl,
+      data_list,
+      fun=lm_each_subsample,
+      formula = formula, n = nrow(data), B = B)
+
+  results <- list(estimates = estimates, formula = formula)
+  class(results) <- "blblm"
+  invisible(results)
+}
+```
+
+<br/><br/>
+
+## Function: coef.blblm 
+coef.blblm will give the calculated coefficient of the regression model with class blblm.
+It will reduce the coefficient stored in the estimate in the result of blblm or blblm_par function to get an average coefficient.
+```{r}
+coef(fit)
+```
+<br/><br/>
+
+## Function: sigma.blblm
+sigma.blblm will give the calculated sigma of the regression model with class blblm.
+It will reduce the sigma stored in the estimate in the result of blblm or blblm_par function to get an average sigma. Users can specify whether they want the function to provide confidence interval.
+```{r}
+sigma (fit)
+```
+<br/><br/>
+
+## Function: confint.blblm
+confint.blblm calculates the confidence interval of the coefficient of the parameter in the blblm model that user specified. By default, the function will provide the confidence interval for the coefficients of all parameters.
+```{r}
+confint(fit)
+```
+<br/><br/>
+
+## Function: predict.blblm
+predict.blblm will make prediction of new input data based on the blblm model. It will return the fitted value as well as the confidence intervall given the new data.
+
+```{r}
+predict(fit, data.frame(wt = c(2.5, 3)), confidence = TRUE)
+```
+<br/><br/>
